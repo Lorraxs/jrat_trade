@@ -1,0 +1,22 @@
+{
+  "name": "ioc_template",
+  "module": "./src/index.ts",
+  "type": "module",
+  "scripts": {
+    "start": "cross-env NODE_ENV=production bun run index.ts",
+    "dev": "cross-env NODE_ENV=development bun --watch run index.ts ",
+    "build": "bun build ./src/index.ts --outdir ./dist"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "cross-env": "^7.0.3",
+    "express": "^4.19.2",
+    "inversify": "^6.0.2",
+    "reflect-metadata": "^0.2.2"
+  }
+}
