@@ -1,5 +1,5 @@
 import type { interfaces } from "inversify";
-import type { ServicesContainer } from "../../inversify/servicesContainer";
+import type { ServicesContainer } from "../../utils/servicesContainer";
 
 export const AppContribution = Symbol("AppContribution");
 export interface AppContribution {

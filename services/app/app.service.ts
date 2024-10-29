@@ -14,15 +14,13 @@ class AppService {
   protected readonly appContributions: AppContribution[] = [];
 
   async start() {
-    this.logService.log("Initing");
     await Promise.all(
       this.appContributions.map((contribution) => contribution.init?.())
     );
-
-    this.logService.log("Start");
     await Promise.all(
       this.appContributions.map((contribution) => contribution.start?.())
     );
+    this.logService.print.success("Started");
   }
 }
 

@@ -2,7 +2,7 @@
   "compilerOptions": {
     // Enable latest features
     "lib": ["ESNext", "DOM"],
-    "types": ["reflect-metadata"],
+    "types": ["node", "bun-types"],
     "target": "ESNext",
     "module": "ESNext",
     "moduleDetection": "force",
@@ -27,6 +27,6 @@
 
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-    "strictPropertyInitialization": false
+    "strictPropertyInitialization": false,
   }
 }
