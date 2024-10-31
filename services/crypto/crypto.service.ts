@@ -17,6 +17,8 @@ import {
   ServicesContainer,
 } from "../../utils/servicesContainer";
 import { ExchangeProvider } from "./crypto.extensions";
+import Elysia from "elysia";
+import { IHttpService } from "../http/http.service";
 
 export type ICryptoService = CryptoService;
 export const ICryptoService = defineService<ICryptoService>("CryptoService");
@@ -41,16 +43,35 @@ class CryptoService implements AppContribution {
   @optional()
   protected readonly exchangeProvider: ExchangeProvider[];
 
-  async init() {
-    this.logService.print.warning("Initializing");
+  @inject(IHttpService)
+  private httpService: IHttpService;
+
+  route = new Elysia({
+    prefix: "/api/v1/crypto",
+  });
+  constructor() {
+    this.route.get("/", () => {
+      return this.exchangeProvider.map((provider) => provider.name);
+    });
+    /* this.route.get("/:provider", (req) => {
+      const provider = this.exchangeProvider.find(
+        (provider) => provider.name === req.params.provider
+      );
+      return provider?.name;
+    }); */
   }
 
-  async start() {
-    this.logService.print.success("Started");
+  async init() {
+    this.logService.print.warning("Initializing");
+    this.httpService.app.use(this.route);
     for (const provider of this.exchangeProvider) {
       await provider.init({
         test: false,
       });
     }
+  }
+
+  async start() {
+    this.logService.print.success("Started");
   }
 }

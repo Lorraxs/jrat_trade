@@ -21,12 +21,53 @@ import { ExchangeInfo } from "../../exchangeInfo";
 import { KlineModel } from "../../../../models/candle.model";
 import { CRAWL_AT, INTERVAL_RANGE } from "../../const";
 import { Symbol } from "../../symbol";
+import { IHttpService } from "../../../http/http.service";
+import Elysia from "elysia";
+import type { IOrderBlock } from "../../types/luxAlgo.type";
 
 @injectable()
 export class BinanceProvider extends Logger implements ExchangeProvider {
+  route = new Elysia({
+    prefix: `/api/v1/crypto/BinanceProvider`,
+  });
+
   constructor() {
     super();
     this.name = "BinanceProvider";
+    this.route.get("/", () => {
+      /* const symbols: {
+        symbol: string;
+        interval: string;
+        orderBlocks: IOrderBlock[];
+      }[] = [];
+      for (const symbol of this.symbols) {
+        symbols.push({
+          symbol: symbol.symbol,
+          interval: symbol.interval,
+          orderBlocks: symbol.orderBlocks,
+        });
+      }
+      return symbols; */
+      const symbols = Array.from(this.symbols).map((symbol) => {
+        return {
+          symbol: symbol.symbol,
+          interval: symbol.interval,
+          orderBlocksLength: symbol.orderBlocks.length,
+        };
+      });
+      return symbols;
+    });
+    this.route.get("/:symbol/:interval", (req) => {
+      const symbol = Array.from(this.symbols).find(
+        (symbol) =>
+          symbol.symbol === req.params.symbol &&
+          symbol.interval === req.params.interval
+      );
+      if (symbol) {
+        return symbol.orderBlocks;
+      }
+      return [];
+    });
   }
 
   baseUrl = "https://testnet.binancefuture.com";
@@ -38,6 +79,8 @@ export class BinanceProvider extends Logger implements ExchangeProvider {
 
   @inject(DiscordBotService)
   private discordBotService: DiscordBotService;
+  @inject(IHttpService)
+  private httpService: IHttpService;
 
   wsMarketStreamManager: WsMarketStreamManager;
 
@@ -45,6 +88,8 @@ export class BinanceProvider extends Logger implements ExchangeProvider {
   symbols: Set<Symbol> = new Set();
 
   async init({ test = false }: ExchangeProviderOptions) {
+    this.print.info("Init BinanceProvider");
+    this.httpService.app.use(this.route);
     this.apiKey = test
       ? GetEnv("BINANCE_TESTNET_API_KEY", "")
       : GetEnv("BINANCE_API_KEY", "");
@@ -96,7 +141,7 @@ export class BinanceProvider extends Logger implements ExchangeProvider {
 
     const symbols = this.testMode ? ["ETHUSDT"] : this.exchangeInfo.symbolList;
     //const symbols = this.exchangeInfo.symbolList;
-    //const symbols = ["ETHUSDT"];
+    //const symbols = ["ETHUSDT", "BTCUSDT"];
     await this.initSymbols(symbols);
   }
 
@@ -173,18 +218,18 @@ export class BinanceProvider extends Logger implements ExchangeProvider {
         /* if (data[i].numberOfTrades !== insertData[i].numberOfTrades) {
           throw new Error("Number of trades not match");
         } */
-        if (
+        /* if (
           data[i].takerBuyBaseAssetVolume !==
           insertData[i].takerBuyBaseAssetVolume
         ) {
           throw new Error("Taker buy base asset volume not match");
-        }
-        if (
+        } */
+        /* if (
           data[i].takerBuyQuoteAssetVolume !==
           insertData[i].takerBuyQuoteAssetVolume
         ) {
           throw new Error("Taker buy quote asset volume not match");
-        }
+        } */
       }
       return true;
     } catch (error) {

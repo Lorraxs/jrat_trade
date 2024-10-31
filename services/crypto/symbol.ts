@@ -11,12 +11,14 @@ import { IObWorkersService } from "./ob-workers.service";
 import { IDiscordBotService } from "../discord/discordBot.service";
 import { EmbedBuilder } from "discord.js";
 import type { IOrderBlock } from "./types/luxAlgo.type";
+import { IHttpService } from "../http/http.service";
 
 @injectable()
 export class Symbol extends Logger {
   private redisService: IRedisService;
   private obWorkersService: IObWorkersService;
   private discordBotService: IDiscordBotService;
+  private httpService: IHttpService;
   constructor(
     type: "binance",
     symbol: string,
@@ -39,6 +41,7 @@ export class Symbol extends Logger {
     this.redisService = container.get(IRedisService);
     this.obWorkersService = container.get(IObWorkersService);
     this.discordBotService = container.get(IDiscordBotService);
+    this.httpService = container.get(IHttpService);
     this.print.info(
       `Init symbol ${this.symbol} with interval ${this.interval}`
     );
@@ -51,14 +54,18 @@ export class Symbol extends Logger {
         .limit(500)
     ).reverse();
     this.print.info(`Init with ${klines.length} klines`);
-    const pushData: string[] = [];
-    klines.forEach((kline) => {
-      pushData.push(JSON.stringify(kline));
-    });
-    await this.redisService.client.del(this.name);
-    await this.redisService.client.rpush(this.name, ...pushData);
-    await this.watchKline();
-    this.calcObs();
+    try {
+      const pushData: string[] = [];
+      klines.forEach((kline) => {
+        pushData.push(JSON.stringify(kline));
+      });
+      await this.redisService.client.del(this.name);
+      await this.redisService.client.rpush(this.name, ...pushData);
+      await this.watchKline();
+      this.calcObs();
+    } catch (error) {
+      this.print.error(error);
+    }
   }
 
   async getKlines(): Promise<Binance.FormatedKline[]> {
@@ -95,6 +102,10 @@ export class Symbol extends Logger {
             takerBuyQuoteAssetVolume: kline.k.Q,
             ignore: kline.k.B,
           };
+          this.httpService.publish({
+            channel: "new_kline",
+            data: newKline,
+          });
           const createdKline = await KlineModel.create(newKline);
           const beforeLength = await this.redisService.client.llen(this.name);
           await this.redisService.client.lpush(
@@ -171,6 +182,16 @@ export class Symbol extends Logger {
           inline: true,
         }
       );
+    });
+    this.httpService.publish({
+      channel: "order_blocks",
+      data: [
+        {
+          symbol: this.symbol,
+          interval: this.interval,
+          orderBlocks: this.orderBlocks,
+        },
+      ],
     });
     /* this.discordBotService.channels.LUX_ALGO_ORDER_BLOCKS?.send({
       embeds: [embed],
