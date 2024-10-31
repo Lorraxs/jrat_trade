@@ -891,7 +891,7 @@ describe("Test Klines", async () => {
     }
   }
   await testInstance.init({
-    test: true,
+    test: false,
   });
 
   test("Assert Kline timeline", async () => {

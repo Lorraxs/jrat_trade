@@ -12,6 +12,7 @@ import { Logger } from "../../utils/logger";
 import { Queue } from "../../utils/queue";
 import type { IObWorkerMessage } from "./types/obWorker.type";
 import type { Box } from "./types/type";
+import type { IOrderBlock } from "./types/luxAlgo.type";
 
 export type IObWorkersService = ObWorkersService;
 export const IObWorkersService =
@@ -30,16 +31,12 @@ class ObWorkersService extends Logger implements AppContribution {
 
   constructor() {
     super();
+    this.name = "ObWorkersService";
   }
   workers: Set<ObWorker> = new Set();
   callQueue = new Queue<{
     key: string;
-    resolve: (data: {
-      bu_ob_boxes: Box[];
-      bu_bb_boxes: Box[];
-      be_ob_boxes: Box[];
-      be_bb_boxes: Box[];
-    }) => void;
+    resolve: (data: IOrderBlock[]) => void;
   }>();
 
   async init() {
@@ -64,12 +61,7 @@ class ObWorkersService extends Logger implements AppContribution {
     if (!worker) {
       /* this.callQueue.enqueue((data) => this.calcOb(data));
       return; */
-      return new Promise<{
-        bu_ob_boxes: Box[];
-        bu_bb_boxes: Box[];
-        be_ob_boxes: Box[];
-        be_bb_boxes: Box[];
-      }>((resolve) => {
+      return new Promise<IOrderBlock[]>((resolve) => {
         this.callQueue.enqueue({ key, resolve });
       });
     }
@@ -99,12 +91,7 @@ class ObWorker extends Logger {
     this.working = true;
     this.print.info("Start working");
     this.worker.postMessage({ event: "start", data: key });
-    return new Promise<{
-      bu_ob_boxes: Box[];
-      bu_bb_boxes: Box[];
-      be_ob_boxes: Box[];
-      be_bb_boxes: Box[];
-    }>((resolve) => {
+    return new Promise<IOrderBlock[]>((resolve) => {
       this.worker.onmessage = (e: MessageEvent<IObWorkerMessage>) => {
         const { event, data } = e.data;
         if (event === "done") {
