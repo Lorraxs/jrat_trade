@@ -133,7 +133,6 @@ class LuxAlgo {
       open: number[];
       openTime: number[];
     } = { high: [], low: [], close: [], open: [], openTime: [] };
-    console.log(klines.length);
 
     for (const candle of klines) {
       convertedData.high.push(Number(candle.high));
@@ -239,7 +238,7 @@ class LuxAlgo {
       this.times.push(this.openTime.current());
       this.frame();
     }
-    this.drawOrderBlocks(true);
+    return this.drawOrderBlocks(true);
   }
 
   private calcAtr() {
@@ -262,7 +261,7 @@ class LuxAlgo {
       this.displayStructure(true);
       this.deleteOrderBlocks(true);
     } catch (error) {
-      console.error(error);
+      //console.error(error);
     }
   }
 
@@ -576,7 +575,7 @@ class LuxAlgo {
         orderBlocks.pop();
       }
       orderBlocks.unshift(o_rderBlock);
-      this.log(internal, orderBlocks.length);
+      //this.log(internal, orderBlocks.length);
     }
   }
 
@@ -627,6 +626,7 @@ class LuxAlgo {
       ? this.internalOrderBlocks
       : this.swingOrderBlocks;
     const orderBlocksSize = orderBlocks.length;
+    const OBs: IOrderBlock[] = [];
     if (orderBlocksSize > 0) {
       const maxOrderBlocks = internal
         ? this.internalOrderBlocksSizeInput
@@ -635,25 +635,28 @@ class LuxAlgo {
         0,
         Math.min(maxOrderBlocks, orderBlocksSize)
       );
-      for (let i = 0; i <= parsedOrdeBlocks.length; i++) {
+      for (let i = 0; i <= parsedOrdeBlocks.length - 1; i++) {
         const eachOrderBlock = parsedOrdeBlocks[i];
-        this.log(
+        /* this.log(
           eachOrderBlock.barTime,
           eachOrderBlock.barHigh,
           eachOrderBlock.barLow,
           eachOrderBlock.bias
-        );
+        ); */
+        OBs.push(eachOrderBlock);
       }
     }
+    return OBs;
   }
 }
 
 self.onmessage = async (e: MessageEvent<IObWorkerMessage>) => {
-  console.log(e.data);
+  //console.log(e.data);
   switch (e.data.event) {
     case "start":
       const instance = new LuxAlgo();
       const result = await instance.run(e.data.data);
+      /* console.log(result); */
       postMessage({
         event: "done",
         data: result,

@@ -65,6 +65,7 @@ export class DiscordBotService implements AppContribution {
     DISCORD_CONDITION_1H_3_CHANNEL_ID: null,
     DISCORD_CONDITION_1H_4_CHANNEL_ID: null,
     DISCORD_CONDITION_1H_5_CHANNEL_ID: null,
+    LUX_ALGO_ORDER_BLOCKS: null,
   };
 
   loading = false;
@@ -91,7 +92,7 @@ export class DiscordBotService implements AppContribution {
                 `found channel ${rChannel.name} [${rChannel.id}]`
               ); */
               this.channels[channel] = rChannel;
-              rChannel.send("```BOT RESTART```");
+              //rChannel.send("```BOT RESTART```");
             }
           } else {
             this.logService.print.error(`Channel not found: ${channel}`);

@@ -112,6 +112,7 @@ export const DiscordLogChannels = [
   "DISCORD_CONDITION_1H_3_CHANNEL_ID",
   "DISCORD_CONDITION_1H_4_CHANNEL_ID",
   "DISCORD_CONDITION_1H_5_CHANNEL_ID",
+  "LUX_ALGO_ORDER_BLOCKS",
 ] as const;
 
 export type IDiscordLogChannel = (typeof DiscordLogChannels)[number];

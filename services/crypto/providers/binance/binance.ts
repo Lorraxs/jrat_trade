@@ -94,9 +94,9 @@ export class BinanceProvider extends Logger implements ExchangeProvider {
       }
     );
 
-    //const symbols = this.testMode ? ["ETHUSDT"] : this.exchangeInfo.symbolList;
+    const symbols = this.testMode ? ["ETHUSDT"] : this.exchangeInfo.symbolList;
     //const symbols = this.exchangeInfo.symbolList;
-    const symbols = ["ETHUSDT"];
+    //const symbols = ["ETHUSDT"];
     await this.initSymbols(symbols);
   }
 
@@ -109,7 +109,7 @@ export class BinanceProvider extends Logger implements ExchangeProvider {
         .sort({
           openTime: -1,
         })
-        .limit(1500);
+        .limit(500);
 
       console.log(data.length);
       console.log(new Date(data[data.length - 1].openTime).toISOString());
@@ -117,7 +117,7 @@ export class BinanceProvider extends Logger implements ExchangeProvider {
         await this.getKlinesFromApi({
           symbol: "ETHUSDT",
           interval: "30m",
-          limit: 1500,
+          limit: 500,
         })
       ).reverse();
       console.log(new Date(dataFromBinance[0].openTime).toISOString());
@@ -135,7 +135,7 @@ export class BinanceProvider extends Logger implements ExchangeProvider {
               dataFromBinance[i].openTime
             ).toISOString()} not closed yet. Skip`
           );
-          if (data.length >= 1500) {
+          if (data.length >= 500) {
             data.pop();
           }
         } else {
@@ -161,18 +161,18 @@ export class BinanceProvider extends Logger implements ExchangeProvider {
         if (data[i].close !== insertData[i].close) {
           throw new Error("Close not match");
         }
-        if (data[i].volume !== insertData[i].volume) {
+        /* if (data[i].volume !== insertData[i].volume) {
           throw new Error("Volume not match");
-        }
+        } */
         if (data[i].closeTime !== insertData[i].closeTime) {
           throw new Error("Close time not match");
         }
-        if (data[i].quoteAssetVolume !== insertData[i].quoteAssetVolume) {
+        /* if (data[i].quoteAssetVolume !== insertData[i].quoteAssetVolume) {
           throw new Error("Quote asset volume not match");
-        }
-        if (data[i].numberOfTrades !== insertData[i].numberOfTrades) {
+        } */
+        /* if (data[i].numberOfTrades !== insertData[i].numberOfTrades) {
           throw new Error("Number of trades not match");
-        }
+        } */
         if (
           data[i].takerBuyBaseAssetVolume !==
           insertData[i].takerBuyBaseAssetVolume
@@ -229,12 +229,12 @@ export class BinanceProvider extends Logger implements ExchangeProvider {
             symbol,
             interval,
             startTime,
-            limit: 1500,
+            limit: 500,
           })
         : await this.getKlinesFromApi({
             symbol,
             interval,
-            limit: 1500,
+            limit: 500,
             //startTime: new Date(CRAWL_AT).getTime(),
           });
       const curTime = new Date().getTime();

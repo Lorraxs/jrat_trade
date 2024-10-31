@@ -8,11 +8,15 @@ import { inject, injectable } from "inversify";
 import { IRedisService } from "../redis/redis.service";
 import { container } from "../../utils/container";
 import { IObWorkersService } from "./ob-workers.service";
+import { IDiscordBotService } from "../discord/discordBot.service";
+import { EmbedBuilder } from "discord.js";
+import type { IOrderBlock } from "./types/luxAlgo.type";
 
 @injectable()
 export class Symbol extends Logger {
   private redisService: IRedisService;
   private obWorkersService: IObWorkersService;
+  private discordBotService: IDiscordBotService;
   constructor(
     type: "binance",
     symbol: string,
@@ -28,11 +32,13 @@ export class Symbol extends Logger {
   symbol: string;
   type: "binance";
   interval: Interval;
+  orderBlocks: IOrderBlock[] = [];
   //klines: Binance.FormatedKline[] = [];
 
   async init() {
     this.redisService = container.get(IRedisService);
     this.obWorkersService = container.get(IObWorkersService);
+    this.discordBotService = container.get(IDiscordBotService);
     this.print.info(
       `Init symbol ${this.symbol} with interval ${this.interval}`
     );
@@ -42,7 +48,7 @@ export class Symbol extends Logger {
         interval: this.interval,
       })
         .sort({ openTime: -1 })
-        .limit(1000)
+        .limit(500)
     ).reverse();
     this.print.info(`Init with ${klines.length} klines`);
     const pushData: string[] = [];
@@ -52,7 +58,7 @@ export class Symbol extends Logger {
     await this.redisService.client.del(this.name);
     await this.redisService.client.rpush(this.name, ...pushData);
     await this.watchKline();
-    await this.calcObs();
+    this.calcObs();
   }
 
   async getKlines(): Promise<Binance.FormatedKline[]> {
@@ -132,6 +138,42 @@ export class Symbol extends Logger {
         obWorker.terminate();
       }
     }; */
-    return this.obWorkersService.calcOb(this.name);
+    this.orderBlocks = await this.obWorkersService.calcOb(this.name);
+    if (this.orderBlocks.length === 0) return;
+    const embed = new EmbedBuilder()
+      .setColor("#00ff00")
+      .setTitle(`Order Block: ${this.symbol} ${this.interval}`)
+      .setTimestamp()
+      .setDescription(
+        `${this.orderBlocks
+          .map((ob) => (ob.bias === 1 ? "🟢" : "🔴"))
+          .join(" ")}`
+      );
+    this.orderBlocks.forEach((ob) => {
+      embed.addFields(
+        {
+          name: "barTime",
+          value: `\`\`\`${ob.barTime.toString()}\`\`\``,
+        },
+        {
+          name: "barHigh",
+          value: `\`\`\`${ob.barHigh.toString()}\`\`\``,
+          inline: true,
+        },
+        {
+          name: "barLow",
+          value: `\`\`\`${ob.barLow.toString()}\`\`\``,
+          inline: true,
+        },
+        {
+          name: "bias",
+          value: `\`\`\`${ob.bias.toString()}\`\`\``,
+          inline: true,
+        }
+      );
+    });
+    /* this.discordBotService.channels.LUX_ALGO_ORDER_BLOCKS?.send({
+      embeds: [embed],
+    }); */
   }
 }
