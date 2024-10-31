@@ -31,6 +31,7 @@ export const Env = [
   "DISCORD_CONDITION_1H_3_CHANNEL_ID",
   "DISCORD_CONDITION_1H_4_CHANNEL_ID",
   "DISCORD_CONDITION_1H_5_CHANNEL_ID",
+  "MAX_OB_WORKER",
 ] as const;
 export type Env = (typeof Env)[number];
 

@@ -41,8 +41,6 @@ class CryptoService implements AppContribution {
   @optional()
   protected readonly exchangeProvider: ExchangeProvider[];
 
-  loading = false;
-
   async init() {
     this.logService.print.warning("Initializing");
   }
@@ -51,7 +49,7 @@ class CryptoService implements AppContribution {
     this.logService.print.success("Started");
     for (const provider of this.exchangeProvider) {
       await provider.init({
-        test: true,
+        test: false,
       });
     }
   }

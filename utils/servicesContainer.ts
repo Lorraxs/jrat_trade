@@ -1,4 +1,5 @@
 import { Container, type interfaces } from "inversify";
+import { container } from "./container";
 
 export type ServicesContainerInitializer = (
   container: ServicesContainer
@@ -7,7 +8,7 @@ export type ServicesContainerInitializer = (
 type SI<T> = interfaces.ServiceIdentifier<T> | ServiceIdentifier<T>;
 
 export class ServicesContainer {
-  protected container = new Container();
+  protected container = container;
   protected cache = new Map<any, any>();
 
   constructor(initializer: ServicesContainerInitializer) {

@@ -56,7 +56,7 @@ export class BinanceProvider extends Logger implements ExchangeProvider {
       this.baseUrl = "https://testnet.binancefuture.com";
       this.wsBaseUrl = "wss://fstream.binancefuture.com";
     } else {
-      this.baseUrl = "https://api.binance.com";
+      this.baseUrl = "https://fapi.binance.com";
       this.wsBaseUrl = "wss://fstream.binance.com";
     }
     const serverTime = await this.getApi("/fapi/v1/time", undefined);
@@ -73,10 +73,13 @@ export class BinanceProvider extends Logger implements ExchangeProvider {
       "Getted exchange info at:",
       new Date(exchangeData.serverTime).toISOString()
     );
-    this.exchangeInfo = new ExchangeInfo({
-      type: "binance",
-      data: exchangeData,
-    });
+    this.exchangeInfo = new ExchangeInfo(
+      {
+        type: "binance",
+        data: exchangeData,
+      },
+      this.testMode
+    );
     this.start();
   }
 
@@ -84,38 +87,37 @@ export class BinanceProvider extends Logger implements ExchangeProvider {
     const handler = await this.wsMarketStreamManager.subscribe(
       "<symbol>@compositeIndex",
       {
-        symbol: "BTCUSDT",
+        symbol: "ETHUSDT",
       },
       (data) => {
         this.print.info(JSON.stringify(data));
       }
     );
-    const validKlines = await this.testKlineData();
-    this.print.infoBg("Test kline data", validKlines);
-    if (!validKlines) {
-      await this.crawlAllKlines();
-    }
-    await this.initSymbols();
+
+    //const symbols = this.testMode ? ["ETHUSDT"] : this.exchangeInfo.symbolList;
+    //const symbols = this.exchangeInfo.symbolList;
+    const symbols = ["ETHUSDT"];
+    await this.initSymbols(symbols);
   }
 
   async testKlineData() {
     try {
       const data = await KlineModel.find({
-        symbol: "BTCUSDT",
+        symbol: "ETHUSDT",
         interval: "30m",
       })
         .sort({
           openTime: -1,
         })
-        .limit(500);
+        .limit(1500);
 
-      console.log(new Date(data[0].openTime).toISOString());
+      console.log(data.length);
       console.log(new Date(data[data.length - 1].openTime).toISOString());
       const dataFromBinance = (
         await this.getKlinesFromApi({
-          symbol: "BTCUSDT",
+          symbol: "ETHUSDT",
           interval: "30m",
-          limit: 500,
+          limit: 1500,
         })
       ).reverse();
       console.log(new Date(dataFromBinance[0].openTime).toISOString());
@@ -133,7 +135,7 @@ export class BinanceProvider extends Logger implements ExchangeProvider {
               dataFromBinance[i].openTime
             ).toISOString()} not closed yet. Skip`
           );
-          if (data.length >= 500) {
+          if (data.length >= 1500) {
             data.pop();
           }
         } else {
@@ -227,12 +229,12 @@ export class BinanceProvider extends Logger implements ExchangeProvider {
             symbol,
             interval,
             startTime,
-            limit: 500,
+            limit: 1500,
           })
         : await this.getKlinesFromApi({
             symbol,
             interval,
-            limit: 500,
+            limit: 1500,
             //startTime: new Date(CRAWL_AT).getTime(),
           });
       const curTime = new Date().getTime();
@@ -267,8 +269,7 @@ export class BinanceProvider extends Logger implements ExchangeProvider {
     }
   }
 
-  async crawlAllKlines() {
-    const symbols = this.exchangeInfo.symbolList;
+  async crawlAllKlines(symbols: string[]) {
     this.print.info(
       `Start crawling all klines at ${new Date(
         CRAWL_AT
@@ -304,8 +305,12 @@ export class BinanceProvider extends Logger implements ExchangeProvider {
     }
   }
 
-  async initSymbols() {
-    const symbols = this.exchangeInfo.symbolList;
+  async initSymbols(symbols: string[]) {
+    const validKlines = await this.testKlineData();
+    this.print.infoBg("Test kline data", validKlines);
+    if (!validKlines) {
+      await this.crawlAllKlines(symbols);
+    }
     let i = 0;
     for (const symbol of symbols) {
       if (!symbol.endsWith("USDT") || symbol.startsWith("1000")) continue;
@@ -359,6 +364,7 @@ export class BinanceProvider extends Logger implements ExchangeProvider {
       });
       return response.data;
     } catch (error: any) {
+      this.print.error(`${this.baseUrl}${endpoint}`);
       this.print.error(error.response?.data);
       return error.response?.data;
     }
