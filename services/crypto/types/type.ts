@@ -139,3 +139,14 @@ export interface ICoinInfo {
   symbol: string;
   tickSize: number;
 }
+
+export class Box {
+  top: number;
+  bottom: number;
+  left: number;
+  constructor(left: number, top: number, bottom: number) {
+    this.left = left;
+    this.top = top;
+    this.bottom = bottom;
+  }
+}

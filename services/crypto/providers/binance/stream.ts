@@ -3,6 +3,7 @@ import { Logger } from "../../../../utils/logger";
 import type { DiscordBotService } from "../../../discord/discordBot.service";
 import { Binance } from "../../types/binance.type";
 import type { BinanceProvider } from "./binance";
+import type { IStreamWorkerMessage } from "../../types/streamWorker.type";
 
 export class WsMarketStreamManager extends Logger {
   name: string = "Binance WsMarketStreamManager";
@@ -70,7 +71,7 @@ export class WsMarketStreamManager extends Logger {
 }
 
 class Stream extends Logger {
-  ws: WebSocket;
+  worker: Worker;
   connected = false;
   subscribedStreams: Set<string> = new Set();
   private id = 0;
@@ -84,76 +85,105 @@ class Stream extends Logger {
     readonly testMode: boolean
   ) {
     super();
-    this.connect();
-  }
+    this.worker = new Worker(new URL("./stream-worker.ts", import.meta.url));
+    this.worker.onmessage = (e: MessageEvent<IStreamWorkerMessage>) => {
+      switch (e.data.event) {
+        case "on_ws_connected":
+          {
+            this.print.info("Connected to stream");
+            this.connected = true;
+            for (const handler of this.onConnectHandlers) {
+              handler();
+            }
+            if (this.subscribedStreams.size > 0) {
+              const streams = Array.from(this.subscribedStreams);
+              const messageId = this.id;
+              this.id++;
+              this.postMessage({
+                event: "send",
+                data: JSON.stringify({
+                  method: "SUBSCRIBE",
+                  params: streams,
+                  id: messageId,
+                }),
+              });
+              this.onSubscribeMessageCallbacks.set(messageId, () => {
+                this.print.info(
+                  `Reconnected and resubscribed to ${streams.length} streams`
+                );
+              });
+            }
+          }
 
+          break;
+        case "on_ws_close":
+          {
+            this.print.errorBg("Stream closed");
+            this.connected = false;
+          }
+          break;
+        case "on_ws_message": {
+          try {
+            const parsedData: Binance.WsMarketStreamResponse<any> = JSON.parse(
+              e.data.data
+            );
+            if (Binance.IsStreamResponseWithId(parsedData)) {
+              const id = parsedData.id;
+              const callback = this.onSubscribeMessageCallbacks.get(id);
+              if (callback) {
+                callback();
+                this.onSubscribeMessageCallbacks.delete(id);
+              }
+            } else {
+              const { stream, data } = parsedData;
+              const handlers = this.onMessageStreamHandlers.get(stream);
+              if (handlers) {
+                for (const handler of handlers) {
+                  handler(data);
+                }
+              }
+            }
+          } catch (error) {
+            console.error(error);
+          }
+          break;
+        }
+        default:
+          break;
+      }
+    };
+    this.postMessage({
+      event: "init",
+      data: {
+        name: this.name,
+        testMode: this.testMode,
+      },
+    });
+  }
+  postMessage(data: IStreamWorkerMessage) {
+    this.worker.postMessage(data);
+  }
   private connect() {
-    this.ws = new WebSocket(
+    /* this.ws = new WebSocket(
       this.testMode
         ? "wss://fstream.binancefuture.com/stream"
         : "wss://fstream.binance.com/stream"
-    );
-    this.ws.onopen = async () => {
-      this.print.info("Connected to stream");
-      this.connected = true;
-      for (const handler of this.onConnectHandlers) {
-        handler();
-      }
-      if (this.subscribedStreams.size > 0) {
-        const streams = Array.from(this.subscribedStreams);
-        const messageId = this.id;
-        this.id++;
-        this.ws.send(
-          JSON.stringify({
-            method: "SUBSCRIBE",
-            params: streams,
-            id: messageId,
-          })
-        );
-        this.onSubscribeMessageCallbacks.set(messageId, () => {
-          this.print.info(
-            `Reconnected and resubscribed to ${streams.length} streams`
-          );
-        });
-      }
-    };
-    this.ws.onmessage = (e: MessageEvent<string>) => {
-      try {
-        const parsedData: Binance.WsMarketStreamResponse<any> = JSON.parse(
-          e.data
-        );
-        if (Binance.IsStreamResponseWithId(parsedData)) {
-          const id = parsedData.id;
-          const callback = this.onSubscribeMessageCallbacks.get(id);
-          if (callback) {
-            callback();
-            this.onSubscribeMessageCallbacks.delete(id);
-          }
-        } else {
-          const { stream, data } = parsedData;
-          const handlers = this.onMessageStreamHandlers.get(stream);
-          if (handlers) {
-            for (const handler of handlers) {
-              handler(data);
-            }
-          }
-        }
-      } catch (error) {
-        console.error(error);
-      }
-    };
-    this.ws.onclose = async () => {
+    ); */
+    /* this.ws.onopen = async () => {
+      
+    }; */
+    /* this.ws.onclose = async () => {
       this.print.errorBg("Stream closed");
       this.connected = false;
       this.print.warning("Reconnecting...");
       setTimeout(() => {
         this.connect();
       }, 1000);
-    };
-    this.ws.onerror = (e) => {
+    }; */
+    /* this.ws.onerror = (e) => {
       this.print.error("Stream error", e);
       this.ws.close();
-    };
+    }; */
   }
 
   async waitConnect(): Promise<void> {
@@ -192,13 +222,14 @@ class Stream extends Logger {
     } else {
       const messageId = this.id;
       this.id++;
-      this.ws.send(
-        JSON.stringify({
+      this.postMessage({
+        event: "send",
+        data: JSON.stringify({
           method: "SUBSCRIBE",
           params: [stream],
           id: messageId,
-        })
-      );
+        }),
+      });
       return new Promise<{ unsubscribe: () => void }>((resolve, reject) => {
         const timeoutTimer = setTimeout(() => {
           reject(new Error("Timeout"));
@@ -228,13 +259,14 @@ class Stream extends Logger {
         this.subscribedStreams.delete(stream);
         const messageId = this.id;
         this.id++;
-        this.ws.send(
-          JSON.stringify({
+        this.postMessage({
+          event: "send",
+          data: JSON.stringify({
             method: "UNSUBSCRIBE",
             params: [stream],
             id: messageId,
-          })
-        );
+          }),
+        });
         this.onSubscribeMessageCallbacks.set(messageId, () => {
           this.print.info(`Unsubscribed from stream ${stream}`);
         });

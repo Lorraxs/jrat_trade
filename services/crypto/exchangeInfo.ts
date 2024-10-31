@@ -6,7 +6,7 @@ export type ExchangeInfoData = {
 };
 
 export class ExchangeInfo {
-  constructor(data: ExchangeInfoData) {
+  constructor(data: ExchangeInfoData, readonly testMode: boolean) {
     if (data.type === "binance") {
       this.parseBinanceData(data.data);
     }
