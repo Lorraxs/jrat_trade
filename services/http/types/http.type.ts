@@ -27,6 +27,17 @@ export const tBroadcastMessage = t.Union([
     ),
   }),
   t.Object({
+    channel: t.Literal("conditions"),
+    time: t.Number(),
+    data: t.Array(
+      t.Object({
+        symbol: t.String(),
+        interval: t.String(),
+        conditions: t.Array(t.Boolean()),
+      })
+    ),
+  }),
+  t.Object({
     channel: t.Literal("new_client"),
     time: t.Number(),
     data: t.Object({
@@ -51,6 +62,27 @@ export const tBroadcastMessage = t.Union([
       takerBuyBaseAssetVolume: t.String(),
       takerBuyQuoteAssetVolume: t.String(),
       ignore: t.String(),
+    }),
+  }),
+  t.Object({
+    channel: t.String(),
+    time: t.Number(),
+    data: t.Object({
+      symbol: t.String(),
+      interval: t.String(),
+      openTime: t.Number(),
+      open: t.String(),
+      high: t.String(),
+      low: t.String(),
+      close: t.String(),
+      volume: t.String(),
+      closeTime: t.Number(),
+      quoteAssetVolume: t.String(),
+      numberOfTrades: t.Number(),
+      takerBuyBaseAssetVolume: t.String(),
+      takerBuyQuoteAssetVolume: t.String(),
+      ignore: t.String(),
+      closed: t.Boolean(),
     }),
   }),
 ]);

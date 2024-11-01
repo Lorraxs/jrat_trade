@@ -52,7 +52,10 @@ export class BinanceProvider extends Logger implements ExchangeProvider {
         return {
           symbol: symbol.symbol,
           interval: symbol.interval,
+          rsi: symbol.rsi,
           orderBlocksLength: symbol.orderBlocks.length,
+          conditions: symbol.conditions,
+          lastKline: symbol.lastKline,
         };
       });
       return symbols;

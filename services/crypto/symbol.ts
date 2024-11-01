@@ -12,6 +12,7 @@ import { IDiscordBotService } from "../discord/discordBot.service";
 import { EmbedBuilder } from "discord.js";
 import type { IOrderBlock } from "./types/luxAlgo.type";
 import { IHttpService } from "../http/http.service";
+import { calculateCurrentRSI } from "./utils/utils";
 
 @injectable()
 export class Symbol extends Logger {
@@ -35,6 +36,16 @@ export class Symbol extends Logger {
   type: "binance";
   interval: Interval;
   orderBlocks: IOrderBlock[] = [];
+  rsi: number = 0;
+  conditions: [boolean, boolean, boolean, boolean, boolean] = [
+    false,
+    false,
+    false,
+    false,
+    false,
+  ];
+  lastKline: Binance.FormatedKline | null = null;
+
   //klines: Binance.FormatedKline[] = [];
 
   async init() {
@@ -62,15 +73,50 @@ export class Symbol extends Logger {
       await this.redisService.client.del(this.name);
       await this.redisService.client.rpush(this.name, ...pushData);
       await this.watchKline();
-      this.calcObs();
+      await this.run();
     } catch (error) {
       this.print.error(error);
     }
   }
 
+  private async run() {
+    await this.calcRsi();
+    this.calcObs().then(async () => {
+      this.conditions[0] = this.condition1();
+      this.conditions[1] = await this.condition2();
+      this.print.info(
+        `Conditions for ${this.symbol} ${this.interval} ${this.conditions}`
+      );
+      this.httpService.publish({
+        channel: "conditions",
+        data: [
+          {
+            symbol: this.symbol,
+            interval: this.interval,
+            conditions: this.conditions,
+          },
+        ],
+      });
+    });
+  }
+
+  async calcRsi() {
+    const klines = await this.getKlines();
+    this.rsi =
+      calculateCurrentRSI(
+        klines.map((k) => Number(k.close)),
+        14
+      ) || 0;
+  }
+
   async getKlines(): Promise<Binance.FormatedKline[]> {
     const data = await this.redisService.client.lrange(this.name, 0, -1);
     return data.map((d) => JSON.parse(d));
+  }
+
+  async getKlineAt(index: number): Promise<Binance.FormatedKline | null> {
+    const data = await this.redisService.client.lindex(this.name, index);
+    return data ? JSON.parse(data) : null;
   }
 
   async watchKline() {
@@ -117,7 +163,30 @@ export class Symbol extends Logger {
           this.print.infoBg(
             `New kline for ${createdKline.symbol} with interval ${createdKline.interval} before: ${beforeLength} after: ${afterLength}`
           );
-          await this.calcObs();
+          await this.run();
+        } else {
+          const newKline = {
+            symbol: this.symbol,
+            interval: this.interval,
+            openTime: kline.k.t,
+            open: kline.k.o,
+            high: kline.k.h,
+            low: kline.k.l,
+            close: kline.k.c,
+            volume: kline.k.v,
+            closeTime: kline.k.T,
+            quoteAssetVolume: kline.k.q,
+            numberOfTrades: kline.k.n,
+            takerBuyBaseAssetVolume: kline.k.V,
+            takerBuyQuoteAssetVolume: kline.k.Q,
+            ignore: kline.k.B,
+            closed: kline.k.x,
+          };
+          this.lastKline = newKline;
+          this.httpService.publish({
+            channel: `kline_${this.symbol}_${this.interval}`,
+            data: newKline,
+          });
         }
       }
     );
@@ -196,5 +265,24 @@ export class Symbol extends Logger {
     /* this.discordBotService.channels.LUX_ALGO_ORDER_BLOCKS?.send({
       embeds: [embed],
     }); */
+  }
+
+  condition1(): boolean {
+    return this.rsi > 50;
+  }
+
+  async condition2(): Promise<boolean> {
+    if (this.conditions[0] === false) return false;
+    if (this.orderBlocks.length === 0) return false;
+    const lastKline = await this.getKlineAt(0);
+    if (!lastKline) return false;
+    for (const ob of this.orderBlocks) {
+      if (
+        Number(lastKline.close) < ob.barHigh &&
+        Number(lastKline.close) > ob.barLow
+      )
+        return true;
+    }
+    return false;
   }
 }

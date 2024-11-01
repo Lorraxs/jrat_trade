@@ -75,3 +75,40 @@ export function change(values: number[]): number {
 
   return currentValue - previousValue;
 }
+
+export function calculateCurrentRSI(
+  prices: number[],
+  period: number
+): number | null {
+  if (prices.length < period + 1) {
+    // Không đủ dữ liệu để tính RSI
+    return null;
+  }
+
+  let gainSum = 0;
+  let lossSum = 0;
+
+  // Tính tổng lợi nhuận và tổn thất trong chu kỳ
+  for (let i = prices.length - period; i < prices.length; i++) {
+    const difference = prices[i] - prices[i - 1];
+    if (difference > 0) {
+      gainSum += difference;
+    } else {
+      lossSum += -difference;
+    }
+  }
+
+  // Tính mức tăng và giảm trung bình
+  const averageGain = gainSum / period;
+  const averageLoss = lossSum / period;
+
+  if (averageLoss === 0) {
+    return 100; // RSI sẽ là 100 nếu không có tổn thất trong chu kỳ
+  }
+
+  // Tính RS và RSI
+  const rs = averageGain / averageLoss;
+  const rsi = 100 - 100 / (1 + rs);
+
+  return rsi;
+}
