@@ -3,7 +3,7 @@ import { KlineModel } from "../../models/candle.model";
 import { Logger } from "../../utils/logger";
 import type { ExchangeProvider } from "./crypto.extensions";
 import type { Binance } from "./types/binance.type";
-import type { Interval } from "./types/type";
+import type { IConditions, Interval } from "./types/type";
 import { inject, injectable } from "inversify";
 import { IRedisService } from "../redis/redis.service";
 import { container } from "../../utils/container";
@@ -35,17 +35,11 @@ export class Symbol extends Logger {
   symbol: string;
   type: "binance";
   interval: Interval;
-  orderBlocks: IOrderBlock[] = [];
+  orderBlocks: (IOrderBlock & { conditions: IConditions })[] = [];
   rsi: number = 0;
-  conditions: [boolean, boolean, boolean, boolean, boolean] = [
-    false,
-    false,
-    false,
-    false,
-    false,
-  ];
   lastKline: Binance.FormatedKline | null = null;
 
+  private lastUpdateKline = Date.now();
   //klines: Binance.FormatedKline[] = [];
 
   async init() {
@@ -70,6 +64,7 @@ export class Symbol extends Logger {
       klines.forEach((kline) => {
         pushData.push(JSON.stringify(kline));
       });
+      this.lastKline = klines[0];
       await this.redisService.client.del(this.name);
       await this.redisService.client.rpush(this.name, ...pushData);
       await this.watchKline();
@@ -81,32 +76,21 @@ export class Symbol extends Logger {
 
   private async run() {
     await this.calcRsi();
-    this.calcObs().then(async () => {
-      this.conditions[0] = this.condition1();
-      this.conditions[1] = await this.condition2();
-      this.print.info(
-        `Conditions for ${this.symbol} ${this.interval} ${this.conditions}`
-      );
-      this.httpService.publish({
-        channel: "conditions",
-        data: [
-          {
-            symbol: this.symbol,
-            interval: this.interval,
-            conditions: this.conditions,
-          },
-        ],
-      });
-    });
+    this.calcObs();
   }
 
   async calcRsi() {
     const klines = await this.getKlines();
+    //if (this.lastKline) klines.unshift(this.lastKline);
     this.rsi =
       calculateCurrentRSI(
         klines.map((k) => Number(k.close)),
         14
       ) || 0;
+    this.httpService.publish<{ rsi: number }>({
+      channel: `rsi_${this.symbol}_${this.interval}`,
+      data: { rsi: this.rsi },
+    });
   }
 
   async getKlines(): Promise<Binance.FormatedKline[]> {
@@ -131,23 +115,33 @@ export class Symbol extends Logger {
         interval: this.interval,
       },
       async (kline) => {
+        const newKline = {
+          symbol: this.symbol,
+          interval: this.interval,
+          openTime: kline.k.t,
+          open: kline.k.o,
+          high: kline.k.h,
+          low: kline.k.l,
+          close: kline.k.c,
+          volume: kline.k.v,
+          closeTime: kline.k.T,
+          quoteAssetVolume: kline.k.q,
+          numberOfTrades: kline.k.n,
+          takerBuyBaseAssetVolume: kline.k.V,
+          takerBuyQuoteAssetVolume: kline.k.Q,
+          ignore: kline.k.B,
+          closed: kline.k.x,
+        };
+        const curTime = Date.now();
+        if (curTime - this.lastUpdateKline > 1500) {
+          this.lastUpdateKline = Date.now();
+          this.lastKline = newKline;
+          this.httpService.publish({
+            channel: `kline_${this.symbol}_${this.interval}`,
+            data: newKline,
+          });
+        }
         if (kline.k.x) {
-          const newKline: Binance.FormatedKline = {
-            symbol: this.symbol,
-            interval: this.interval,
-            openTime: kline.k.t,
-            open: kline.k.o,
-            high: kline.k.h,
-            low: kline.k.l,
-            close: kline.k.c,
-            volume: kline.k.v,
-            closeTime: kline.k.T,
-            quoteAssetVolume: kline.k.q,
-            numberOfTrades: kline.k.n,
-            takerBuyBaseAssetVolume: kline.k.V,
-            takerBuyQuoteAssetVolume: kline.k.Q,
-            ignore: kline.k.B,
-          };
           this.httpService.publish({
             channel: "new_kline",
             data: newKline,
@@ -164,125 +158,100 @@ export class Symbol extends Logger {
             `New kline for ${createdKline.symbol} with interval ${createdKline.interval} before: ${beforeLength} after: ${afterLength}`
           );
           await this.run();
-        } else {
-          const newKline = {
-            symbol: this.symbol,
-            interval: this.interval,
-            openTime: kline.k.t,
-            open: kline.k.o,
-            high: kline.k.h,
-            low: kline.k.l,
-            close: kline.k.c,
-            volume: kline.k.v,
-            closeTime: kline.k.T,
-            quoteAssetVolume: kline.k.q,
-            numberOfTrades: kline.k.n,
-            takerBuyBaseAssetVolume: kline.k.V,
-            takerBuyQuoteAssetVolume: kline.k.Q,
-            ignore: kline.k.B,
-            closed: kline.k.x,
-          };
-          this.lastKline = newKline;
-          this.httpService.publish({
-            channel: `kline_${this.symbol}_${this.interval}`,
-            data: newKline,
-          });
         }
       }
     );
   }
 
   async calcObs() {
-    /* const klines = await this.getKlines();
-    const convertedData: {
-      high: number[];
-      low: number[];
-      close: number[];
-      open: number[];
-    } = { high: [], low: [], close: [], open: [] };
-    for (const candle of klines) {
-      convertedData.high.push(Number(candle.high));
-      convertedData.low.push(Number(candle.low));
-      convertedData.close.push(Number(candle.close));
-      convertedData.open.push(Number(candle.open));
+    const orderBlocks = await this.obWorkersService.calcOb(this.name);
+    if (orderBlocks.length === 0) return;
+    this.orderBlocks = [];
+    for (const ob of orderBlocks) {
+      const conditions = await this.calcConditions(ob);
+      this.orderBlocks.push({ ...ob, conditions });
     }
-    const obWorker = new Worker(new URL("./getob-worker.ts", import.meta.url));
-    obWorker.postMessage({
-      event: "start",
-      data: convertedData,
+    this.httpService.publish<{
+      orderBlocks: (IOrderBlock & { conditions: IConditions })[];
+      numConditions: number;
+    }>({
+      channel: `order_blocks_${this.symbol}_${this.interval}`,
+      data: {
+        orderBlocks: this.orderBlocks,
+        numConditions: this.numConditions,
+      },
     });
-    obWorker.onmessage = (e: MessageEvent) => {
-      const { event, data } = e.data;
-      if (event === "done") {
-        console.log(this.name, data);
-        obWorker.terminate();
-      }
-    }; */
-    this.orderBlocks = await this.obWorkersService.calcOb(this.name);
-    if (this.orderBlocks.length === 0) return;
-    const embed = new EmbedBuilder()
-      .setColor("#00ff00")
-      .setTitle(`Order Block: ${this.symbol} ${this.interval}`)
-      .setTimestamp()
-      .setDescription(
-        `${this.orderBlocks
-          .map((ob) => (ob.bias === 1 ? "🟢" : "🔴"))
-          .join(" ")}`
-      );
-    this.orderBlocks.forEach((ob) => {
-      embed.addFields(
-        {
-          name: "barTime",
-          value: `\`\`\`${ob.barTime.toString()}\`\`\``,
-        },
-        {
-          name: "barHigh",
-          value: `\`\`\`${ob.barHigh.toString()}\`\`\``,
-          inline: true,
-        },
-        {
-          name: "barLow",
-          value: `\`\`\`${ob.barLow.toString()}\`\`\``,
-          inline: true,
-        },
-        {
-          name: "bias",
-          value: `\`\`\`${ob.bias.toString()}\`\`\``,
-          inline: true,
-        }
-      );
-    });
-    this.httpService.publish({
-      channel: "order_blocks",
-      data: [
-        {
-          symbol: this.symbol,
-          interval: this.interval,
-          orderBlocks: this.orderBlocks,
-        },
-      ],
-    });
-    /* this.discordBotService.channels.LUX_ALGO_ORDER_BLOCKS?.send({
-      embeds: [embed],
-    }); */
   }
 
+  get numConditions(): number {
+    let c = 0;
+    for (const ob of this.orderBlocks) {
+      if (ob.conditions[0]) c++;
+      if (ob.conditions[1]) c += 2;
+      if (ob.conditions[2]) c += 3;
+      if (ob.conditions[3]) c += 4;
+      if (ob.conditions[4]) c += 5;
+    }
+    return c;
+  }
+
+  async calcConditions(ob: IOrderBlock): Promise<IConditions> {
+    const conditions: IConditions = [false, false, false, false, false];
+    conditions[0] = this.condition1();
+    if (conditions[0]) conditions[1] = await this.condition2(ob);
+    if (conditions[1]) conditions[2] = await this.condition3(ob);
+    if (conditions[2]) conditions[3] = await this.condition4();
+    if (conditions[3]) conditions[4] = await this.condition5();
+    this.httpService.publish<{
+      conditions: [boolean, boolean, boolean, boolean, boolean];
+    }>({
+      channel: `condition_${this.symbol}_${this.interval}`,
+      data: {
+        conditions: conditions,
+      },
+    });
+    return conditions;
+  }
+
+  //Kiểm tra xem RSI có lớn hơn 50 không
   condition1(): boolean {
     return this.rsi > 50;
   }
 
-  async condition2(): Promise<boolean> {
-    if (this.conditions[0] === false) return false;
-    if (this.orderBlocks.length === 0) return false;
-    const lastKline = await this.getKlineAt(0);
+  //Nếu OB là BULLISH kiểm tra xem giá hiện tại có thấp hơn giá thấp nhất của OB không
+  // Nếu OB là BEARISH kiểm tra xem giá hiện tại có cao hơn giá cao nhất của OB không
+  async condition2(ob: IOrderBlock): Promise<boolean> {
+    const lastKline = this.lastKline;
     if (!lastKline) return false;
-    for (const ob of this.orderBlocks) {
-      if (
-        Number(lastKline.close) < ob.barHigh &&
-        Number(lastKline.close) > ob.barLow
-      )
-        return true;
+    if (ob.bias === 1) {
+      if (Number(lastKline.close) > ob.barHigh) return true;
+    } else {
+      if (Number(lastKline.close) < ob.barLow) return true;
     }
+    return false;
+  }
+
+  //Kiểm tra xem nến có phải là màu xanh không
+  condition3(ob: IOrderBlock): boolean {
+    const lastKline = this.lastKline;
+    if (!lastKline) return false;
+    if (lastKline.close > lastKline.open) return true;
+    return false;
+  }
+
+  //Kiểm tra 1 nến trước đó có phải là màu xanh không
+  async condition4(): Promise<boolean> {
+    const kline = await this.getKlineAt(1);
+    if (!kline) return false;
+    if (kline.close > kline.open) return true;
+    return false;
+  }
+
+  //Kiểm tra 2 nến trước đó có phải là màu đỏ không
+  async condition5(): Promise<boolean> {
+    const kline = await this.getKlineAt(2);
+    if (!kline) return false;
+    if (kline.close < kline.open) return true;
     return false;
   }
 }

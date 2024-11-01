@@ -152,8 +152,12 @@ class HttpService implements AppContribution {
     return ws;
   }
 
-  publish(data: Omit<IBroadcastMessage, "time">) {
-    const payload: any = { ...data, time: Date.now() };
+  publish<T>(data: { channel: string; data: T }) {
+    const payload: {
+      channel: string;
+      data: T;
+      time: number;
+    } = { ...data, time: Date.now() };
     this.server.publish(data.channel, JSON.stringify(payload));
   }
 
@@ -165,7 +169,9 @@ class HttpService implements AppContribution {
       self.server = server;
     });
     setInterval(() => {
-      self.publish({
+      self.publish<{
+        foo: string;
+      }>({
         channel: "test",
         data: {
           foo: "bar",

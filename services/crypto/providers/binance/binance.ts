@@ -54,8 +54,8 @@ export class BinanceProvider extends Logger implements ExchangeProvider {
           interval: symbol.interval,
           rsi: symbol.rsi,
           orderBlocksLength: symbol.orderBlocks.length,
-          conditions: symbol.conditions,
           lastKline: symbol.lastKline,
+          numConditions: symbol.numConditions,
         };
       });
       return symbols;
@@ -143,7 +143,7 @@ export class BinanceProvider extends Logger implements ExchangeProvider {
     );
 
     const symbols = this.testMode ? ["ETHUSDT"] : this.exchangeInfo.symbolList;
-    //const symbols = this.exchangeInfo.symbolList;
+    //const symbols = this.exchangeInfo.symbolList.slice(0, 20);
     //const symbols = ["ETHUSDT", "BTCUSDT"];
     await this.initSymbols(symbols);
   }

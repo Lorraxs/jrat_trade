@@ -151,3 +151,5 @@ export class Box {
     this.bottom = bottom;
   }
 }
+
+export type IConditions = [boolean, boolean, boolean, boolean, boolean];
