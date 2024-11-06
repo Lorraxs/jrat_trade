@@ -3,7 +3,7 @@ import { KlineModel } from "../../models/candle.model";
 import { Logger } from "../../utils/logger";
 import type { ExchangeProvider } from "./crypto.extensions";
 import type { Binance } from "./types/binance.type";
-import type { IConditions, Interval } from "./types/type";
+import type { IConditions, Interval, TradeSignal } from "./types/type";
 import { inject, injectable } from "inversify";
 import { IRedisService } from "../redis/redis.service";
 import { container } from "../../utils/container";
@@ -13,6 +13,7 @@ import { EmbedBuilder } from "discord.js";
 import type { IOrderBlock } from "./types/luxAlgo.type";
 import { IHttpService } from "../http/http.service";
 import { calculateCurrentRSI } from "./utils/utils";
+import { TradeSignalModel } from "../../models/tradeSignal.model";
 
 @injectable()
 export class Symbol extends Logger {
@@ -59,6 +60,10 @@ export class Symbol extends Logger {
         .limit(500)
     ).reverse();
     this.print.info(`Init with ${klines.length} klines`);
+    if (klines.length <= 0) {
+      this.print.error("No klines found");
+      return;
+    }
     try {
       const pushData: string[] = [];
       klines.forEach((kline) => {
@@ -210,7 +215,53 @@ export class Symbol extends Logger {
         conditions: conditions,
       },
     });
+    if (!conditions.includes(false)) {
+      this.sendTradeSignal(ob);
+    }
     return conditions;
+  }
+
+  async hasTradeSignal(hash: string): Promise<boolean> {
+    try {
+      const data = await TradeSignalModel.findOne({
+        hash: hash,
+      });
+      if (data) return true;
+    } catch (error) {
+      return false;
+    }
+    return false;
+  }
+
+  async sendTradeSignal(ob: IOrderBlock) {
+    const hash = `${this.symbol}_${this.interval}_${ob.barHigh}_${ob.barLow}_${ob.barTime}_${ob.bias}`;
+    if (await this.hasTradeSignal(hash)) return;
+    const signal: TradeSignal = {
+      hash,
+      symbol: this.symbol,
+      interval: this.interval,
+      bias: ob.bias,
+      barHigh: ob.barHigh,
+      barLow: ob.barLow,
+      barTime: ob.barTime,
+    };
+    await TradeSignalModel.create(signal);
+    const embed = new EmbedBuilder()
+      .setTitle(`Trade Signal`)
+      .setDescription(
+        `Symbol: ${this.symbol}\nInterval: ${this.interval}\nBias: ${
+          ob.bias === 1 ? "BULLISH" : "BEARISH"
+        }\nOB: ${ob.barHigh} - ${ob.barLow}`
+      )
+      .setColor(ob.bias === 1 ? "#75f542" : "#ff1434")
+      .setTimestamp();
+    this.httpService.publish<TradeSignal>({
+      channel: `trade_signal_${this.symbol}_${this.interval}`,
+      data: signal,
+    });
+    await this.discordBotService.channels.LUX_ALGO_ORDER_BLOCKS?.send({
+      embeds: [embed],
+    });
   }
 
   //Kiểm tra xem RSI có lớn hơn 50 không

@@ -153,3 +153,13 @@ export class Box {
 }
 
 export type IConditions = [boolean, boolean, boolean, boolean, boolean];
+
+export interface TradeSignal {
+  symbol: string;
+  interval: string;
+  bias: number;
+  barHigh: number;
+  barLow: number;
+  barTime: number;
+  hash: string;
+}
