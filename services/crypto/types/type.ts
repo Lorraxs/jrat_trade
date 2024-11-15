@@ -163,3 +163,8 @@ export interface TradeSignal {
   barTime: number;
   hash: string;
 }
+
+export interface ICryptoSettings {
+  condition1: number;
+  condition2: number;
+}

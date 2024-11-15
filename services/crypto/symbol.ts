@@ -14,6 +14,7 @@ import type { IOrderBlock } from "./types/luxAlgo.type";
 import { IHttpService } from "../http/http.service";
 import { calculateCurrentRSI } from "./utils/utils";
 import { TradeSignalModel } from "../../models/tradeSignal.model";
+import { ICryptoService } from "./crypto.service";
 
 @injectable()
 export class Symbol extends Logger {
@@ -21,6 +22,7 @@ export class Symbol extends Logger {
   private obWorkersService: IObWorkersService;
   private discordBotService: IDiscordBotService;
   private httpService: IHttpService;
+  private cryptoService: ICryptoService;
   constructor(
     type: "binance",
     symbol: string,
@@ -48,6 +50,7 @@ export class Symbol extends Logger {
     this.obWorkersService = container.get(IObWorkersService);
     this.discordBotService = container.get(IDiscordBotService);
     this.httpService = container.get(IHttpService);
+    this.cryptoService = container.get(ICryptoService);
     this.print.info(
       `Init symbol ${this.symbol} with interval ${this.interval}`
     );
@@ -266,18 +269,28 @@ export class Symbol extends Logger {
 
   //Kiểm tra xem RSI có lớn hơn 50 không
   condition1(): boolean {
-    return this.rsi > 50;
+    return this.rsi > this.cryptoService.settings.condition1;
   }
 
   //Nếu OB là BULLISH kiểm tra xem giá hiện tại có thấp hơn giá thấp nhất của OB không
   // Nếu OB là BEARISH kiểm tra xem giá hiện tại có cao hơn giá cao nhất của OB không
   async condition2(ob: IOrderBlock): Promise<boolean> {
+    const size =
+      ((ob.barHigh - ob.barLow) * this.cryptoService.settings.condition2) / 100;
     const lastKline = this.lastKline;
     if (!lastKline) return false;
     if (ob.bias === 1) {
-      if (Number(lastKline.close) > ob.barHigh) return true;
+      if (
+        Number(lastKline.close) > ob.barHigh &&
+        Number(lastKline.close) < ob.barHigh + size
+      )
+        return true;
     } else {
-      if (Number(lastKline.close) < ob.barLow) return true;
+      if (
+        Number(lastKline.close) < ob.barLow &&
+        Number(lastKline.close) > ob.barLow - size
+      )
+        return true;
     }
     return false;
   }
