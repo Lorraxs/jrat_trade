@@ -1,3 +1,4 @@
+import type { Binance } from "../services/crypto/types/binance.type";
 import type { Env } from "../types/env";
 
 export const spacedStr = (str: string | number, length = 20) => {
@@ -29,3 +30,15 @@ export const MakeQueryString = (q: { [key: string]: any }) =>
         .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(q[k])}`)
         .join("&")}`
     : "";
+
+export function isRedCandle(candle: Binance.FormatedKline): boolean {
+  return Number(candle.close) < Number(candle.open);
+}
+
+export function isGreenCandle(candle: Binance.FormatedKline): boolean {
+  return Number(candle.close) > Number(candle.open);
+}
+
+export function getCandleSize(candle: Binance.FormatedKline): number {
+  return Math.abs(Number(candle.close) - Number(candle.open));
+}

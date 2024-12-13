@@ -10,7 +10,10 @@ import {
 import { ScopedLogger } from "../log/scopedLogger";
 import { Logger } from "../../utils/logger";
 import { Queue } from "../../utils/queue";
-import type { IObWorkerMessage } from "./types/obWorker.type";
+import type {
+  IObWorkerMessage,
+  IOldObWorkerMessage,
+} from "./types/obWorker.type";
 import type { Box } from "./types/type";
 import type { IOrderBlock } from "./types/luxAlgo.type";
 
@@ -36,7 +39,8 @@ class ObWorkersService extends Logger implements AppContribution {
   workers: Set<ObWorker> = new Set();
   callQueue = new Queue<{
     key: string;
-    resolve: (data: IOrderBlock[]) => void;
+    resolve: (data: any) => void;
+    type: "luxAlgo" | "oldOb";
   }>();
 
   async init() {
@@ -59,19 +63,35 @@ class ObWorkersService extends Logger implements AppContribution {
     this.print.info("Calc OB", key);
     const worker = this.getFreeWorker();
     if (!worker) {
-      /* this.callQueue.enqueue((data) => this.calcOb(data));
-      return; */
       return new Promise<IOrderBlock[]>((resolve) => {
-        this.callQueue.enqueue({ key, resolve });
+        this.callQueue.enqueue({ key, resolve, type: "luxAlgo" });
       });
     }
     return worker.start(key);
   }
 
+  async calcOldOb(key: string) {
+    this.print.info("Calc Old OB", key);
+    const worker = this.getFreeWorker();
+    if (!worker) {
+      return new Promise<{
+        bu_ob_boxes: Box[];
+        bu_bb_boxes: Box[];
+        be_ob_boxes: Box[];
+        be_bb_boxes: Box[];
+      }>((resolve) => {
+        this.callQueue.enqueue({ key, resolve, type: "oldOb" });
+      });
+    }
+    return worker.startOldOb(key);
+  }
+
   onWorkerDone(worker: ObWorker) {
     const data = this.callQueue.dequeue();
     if (data) {
-      worker.start(data.key).then(data.resolve);
+      if (data.type === "oldOb") worker.startOldOb(data.key).then(data.resolve);
+      else if (data.type === "luxAlgo")
+        worker.start(data.key).then(data.resolve);
     }
   }
 }
@@ -83,8 +103,12 @@ class ObWorker extends Logger {
   ) {
     super();
     this.worker = new Worker(new URL("./luxAlgo-worker.ts", import.meta.url));
+    this.oldObWorker = new Worker(
+      new URL("./old-ob-worker.ts", import.meta.url)
+    );
   }
   worker: Worker;
+  oldObWorker: Worker;
   working = false;
 
   async start(key: string) {
@@ -93,6 +117,28 @@ class ObWorker extends Logger {
     this.worker.postMessage({ event: "start", data: key });
     return new Promise<IOrderBlock[]>((resolve) => {
       this.worker.onmessage = (e: MessageEvent<IObWorkerMessage>) => {
+        const { event, data } = e.data;
+        if (event === "done") {
+          this.working = false;
+          this.obWorkersService.onWorkerDone(this);
+          this.print.infoBg("Done", key, JSON.stringify(data));
+          resolve(data);
+        }
+      };
+    });
+  }
+
+  async startOldOb(key: string) {
+    this.working = true;
+    this.print.info("Start working");
+    this.oldObWorker.postMessage({ event: "start", data: key });
+    return new Promise<{
+      bu_ob_boxes: Box[];
+      bu_bb_boxes: Box[];
+      be_ob_boxes: Box[];
+      be_bb_boxes: Box[];
+    }>((resolve) => {
+      this.oldObWorker.onmessage = (e: MessageEvent<IOldObWorkerMessage>) => {
         const { event, data } = e.data;
         if (event === "done") {
           this.working = false;

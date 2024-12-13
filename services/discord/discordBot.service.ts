@@ -66,6 +66,7 @@ export class DiscordBotService implements AppContribution {
     DISCORD_CONDITION_1H_4_CHANNEL_ID: null,
     DISCORD_CONDITION_1H_5_CHANNEL_ID: null,
     LUX_ALGO_ORDER_BLOCKS: null,
+    OLD_SIGNAL: null,
   };
 
   loading = false;

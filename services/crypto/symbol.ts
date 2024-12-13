@@ -3,7 +3,7 @@ import { KlineModel } from "../../models/candle.model";
 import { Logger } from "../../utils/logger";
 import type { ExchangeProvider } from "./crypto.extensions";
 import type { Binance } from "./types/binance.type";
-import type { IConditions, Interval, TradeSignal } from "./types/type";
+import type { Box, IConditions, Interval, TradeSignal } from "./types/type";
 import { inject, injectable } from "inversify";
 import { IRedisService } from "../redis/redis.service";
 import { container } from "../../utils/container";
@@ -15,6 +15,12 @@ import { IHttpService } from "../http/http.service";
 import { calculateCurrentRSI } from "./utils/utils";
 import { TradeSignalModel } from "../../models/tradeSignal.model";
 import { ICryptoService } from "./crypto.service";
+import {
+  getCandleSize,
+  isGreenCandle,
+  isRedCandle,
+  spacedStr,
+} from "../../utils/utils";
 
 @injectable()
 export class Symbol extends Logger {
@@ -85,6 +91,134 @@ export class Symbol extends Logger {
   private async run() {
     await this.calcRsi();
     this.calcObs();
+    this.calcOldObs();
+  }
+
+  async calcOldObs() {
+    const orderBlocks = await this.obWorkersService.calcOldOb(this.name);
+    this.print.info(`Old OBs: ${orderBlocks.be_bb_boxes.length}`);
+    this.print.info(`Old OBs: ${JSON.stringify(orderBlocks)}`);
+
+    if (this.rsi && this.rsi > 30) {
+      /* this.binanceService.sendConditionToDiscord(
+        this.timeFrame,
+        1,
+        `${spacedStr(this.symbol)}Interval: ${spacedStr(this.timeFrame)}RSI: ${spacedStr(rsi.toString())}`
+      ); */
+      this.discordBotService.channels.OLD_SIGNAL?.send(
+        `${spacedStr(this.symbol)}Interval: ${spacedStr(
+          this.interval
+        )}RSI: ${spacedStr(this.rsi.toString())}`
+      );
+    }
+
+    if (orderBlocks.bu_ob_boxes.length > 0) {
+      for (const box of orderBlocks.bu_ob_boxes) {
+        try {
+          const firstKline = this.lastKline;
+          /* this.binanceService.sendToDiscord(
+            'DISCORD_BUOB_CHANNEL_ID',
+            `${spacedStr(this.symbol)} - interval: ${spacedStr(this.timeFrame)} - open: ${spacedStr(firstKline.open.toString())} - close: ${spacedStr(firstKline.close)}`
+          ); */
+          if (firstKline)
+            this.print.infoBg(
+              `NEW BU OB: ${spacedStr(this.symbol, 10)} - interval: ${spacedStr(
+                this.interval,
+                10
+              )} - open: ${spacedStr(firstKline.open, 10)} - close: ${spacedStr(
+                firstKline.close,
+                10
+              )}`
+            );
+        } catch (error) {
+          console.error(error);
+        }
+      }
+    }
+    this.checkPriceInBUOB(orderBlocks);
+  }
+
+  async checkPriceInBUOB(orderBlocks: {
+    bu_ob_boxes: Box[];
+    bu_bb_boxes: Box[];
+    be_ob_boxes: Box[];
+    be_bb_boxes: Box[];
+  }) {
+    const lastKline = this.lastKline;
+    const klineP1 = await this.getKlineAt(1);
+    const klineP2 = await this.getKlineAt(2);
+
+    if (!lastKline || !klineP1 || !klineP2) {
+      return;
+    }
+    if (orderBlocks.bu_ob_boxes.length > 0) {
+      for (const box of orderBlocks.bu_ob_boxes) {
+        if (Number(lastKline.close) <= box.top) {
+          this.print.warningBg(
+            `Price in BU OB: ${spacedStr(this.symbol)}Interval: ${spacedStr(
+              this.interval
+            )}Bottom: ${spacedStr(box.bottom)}Top: ${spacedStr(
+              box.top
+            )}Current Low: ${spacedStr(lastKline.low)}`
+          );
+          /* this.discordBotService.channels.OLD_SIGNAL?.send(
+            `Price in BU OB: ${spacedStr(this.symbol)}Interval: ${spacedStr(
+              this.interval
+            )}Bottom: ${spacedStr(box.bottom)}Top: ${spacedStr(
+              box.top
+            )}Current Low: ${spacedStr(lastKline.low)}`
+          ); */
+
+          if (Number(lastKline.close) > Number(klineP1.open)) {
+            this.print.successBg(
+              `CONDITION 3: ${spacedStr(this.symbol)}Interval: ${spacedStr(
+                this.interval
+              )}0 Close: ${spacedStr(klineP2.close)}-1 Open: ${spacedStr(
+                klineP1.open
+              )}`
+            );
+            /* this.discordBotService.channels.OLD_SIGNAL?.send(
+              `CONDITION 3: ${spacedStr(this.symbol)}Interval: ${spacedStr(
+                this.interval
+              )}0 Close: ${spacedStr(lastKline.close)}-1 Open: ${spacedStr(
+                klineP1.open
+              )}`
+            ); */
+            if (isGreenCandle(klineP1)) {
+              this.print.successBg(
+                `CONDITION 4: ${spacedStr(this.symbol)}Interval: ${spacedStr(
+                  this.interval
+                )}`
+              );
+              /* this.discordBotService.channels.OLD_SIGNAL?.send(
+                `CONDITION 4:${spacedStr(this.symbol)}Interval: ${spacedStr(
+                  this.interval
+                )}`
+              ); */
+              if (isRedCandle(klineP2)) {
+                if (getCandleSize(klineP2) < getCandleSize(klineP1)) {
+                  this.print.successBg(
+                    `BUY SIGNAL: ${spacedStr(this.symbol)}Interval: ${spacedStr(
+                      this.interval
+                    )}`
+                  );
+                  this.discordBotService.channels.OLD_SIGNAL?.send(
+                    `BUY SIGNAL: ${spacedStr(this.symbol)}Interval: ${spacedStr(
+                      this.interval
+                    )}`
+                  );
+                  /* this.discordBotService.channels.OLD_SIGNAL?.send(
+                    `BUY SIGNAL: ${spacedStr(this.symbol)}Interval: ${spacedStr(
+                      this.interval
+                    )}`
+                  ); */
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   }
 
   async calcRsi() {
@@ -173,6 +307,7 @@ export class Symbol extends Logger {
 
   async calcObs() {
     const orderBlocks = await this.obWorkersService.calcOb(this.name);
+
     if (orderBlocks.length === 0) return;
     this.orderBlocks = [];
     for (const ob of orderBlocks) {
