@@ -27,6 +27,7 @@ class RedisService implements AppContribution {
   constructor() {}
   client = new Redis({
     lazyConnect: true,
+    password: process.env.REDIS_PASSWORD || ""
   });
 
   async init() {
