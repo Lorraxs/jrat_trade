@@ -208,7 +208,9 @@ export class MarketStructure {
     open: [],
   };
 
-  redisClient = new Redis();
+  redisClient = new Redis({
+    password: process.env.REDIS_PASSWORD || ""
+  });
 
   constructor() {}
 

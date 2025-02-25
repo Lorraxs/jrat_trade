@@ -215,7 +215,9 @@ class OB {
   market = 1;
 
   idle = true;
-  redisClient = new Redis();
+  redisClient = new Redis({
+    password: process.env.REDIS_PASSWORD || ""
+  });
 
   constructor(
     private data: {

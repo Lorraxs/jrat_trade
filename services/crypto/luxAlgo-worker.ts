@@ -66,7 +66,9 @@ interface Trend {
 
 class LuxAlgo {
   constructor() {}
-  redisClient = new Redis();
+  redisClient = new Redis({
+    password: process.env.REDIS_PASSWORD || ""
+  });
   cache = new Map<string, Series>();
 
   high = new Series<number>();
